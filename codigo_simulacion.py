@@ -5,37 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-# Plummer sphere with N solar mass stars, scale radius a parsecs
-def plummersphere(N, a, NEWTON_G):
-  x, y, z = [], [], []
-  vx, vy, vz = [], [], []
-  nstars = 0
-  while nstars < N:
-    # Sample radius from cumulative mass distribution
-    radius = a / np.sqrt(random.random()**(-2/3) - 1)
-    # Sample velocity magnitude through inversion sampling from velocity
-    # distribution
-    xx = random.random()
-    yy = random.random()*0.1
-    if yy < xx**2 * (1-xx**2)**3.5: # the star is added to the sample
-      nstars += 1
-      vmag = xx * np.sqrt(2*NEWTON_G*N)*(radius**2+a**2)**(-0.25)
-        # N = total mass by construction
-      # Calculate location coordinates
-      phi = random.random()*2*np.pi
-      theta = np.arccos(random.random() * 2 - 1)
-      x.append(radius*np.sin(theta)*np.cos(phi))
-      y.append(radius*np.sin(theta)*np.sin(phi))
-      z.append(radius*np.cos(theta))
-      # Calculate velocity coordinates
-      phi = random.random()*2*np.pi
-      theta = np.arccos(random.random() * 2 - 1)
-      vx.append(vmag*np.sin(theta)*np.cos(phi))
-      vy.append(vmag*np.sin(theta)*np.sin(phi))
-      vz.append(vmag*np.cos(theta))
-  return [Particle(x[i], y[i], z[i], vx[i], vy[i], vz[i], str(i)) \
-    for i in xrange(N)]
-
+########################################################################################################################################################
 # holds phase space information of a particle
 class Particle:
   def __init__(self, x, y, z, vx, vy, vz, name):
@@ -184,7 +154,65 @@ class Cell:
      # using object identity
      else:
        return self.particle != particle
+########################################################################################################################################################
+# seed the RNG to give the same Plummer initial conditions
+def seed():
+  random.seed("this is a seed for timing purposes")
 
+# Plummer sphere with N solar mass stars, scale radius a parsecs
+def plummersphere(N, a, NEWTON_G):
+  x, y, z = [], [], []
+  vx, vy, vz = [], [], []
+  nstars = 0
+  while nstars < N:
+    # Sample radius from cumulative mass distribution
+    radius = a / np.sqrt(random.random()**(-2/3) - 1)
+    # Sample velocity magnitude through inversion sampling from velocity
+    # distribution
+    xx = random.random()
+    yy = random.random()*0.1
+    if yy < xx**2 * (1-xx**2)**3.5: # the star is added to the sample
+      nstars += 1
+      vmag = xx * np.sqrt(2*NEWTON_G*N)*(radius**2+a**2)**(-0.25)
+        # N = total mass by construction
+      # Calculate location coordinates
+      phi = random.random()*2*np.pi
+      theta = np.arccos(random.random() * 2 - 1)
+      x.append(radius*np.sin(theta)*np.cos(phi))
+      y.append(radius*np.sin(theta)*np.sin(phi))
+      z.append(radius*np.cos(theta))
+      # Calculate velocity coordinates
+      phi = random.random()*2*np.pi
+      theta = np.arccos(random.random() * 2 - 1)
+      vx.append(vmag*np.sin(theta)*np.cos(phi))
+      vy.append(vmag*np.sin(theta)*np.sin(phi))
+      vz.append(vmag*np.cos(theta))
+  return [Particle(x[i], y[i], z[i], vx[i], vy[i], vz[i], str(i)) \
+    for i in range(N)]
+
+# two body problem with orbit semimajor axis a, eccentricity e
+def kepler(a, e, NEWTON_G):
+  rmin = a * (1-e) #periastron
+  h = (rmin * (1+e) * NEWTON_G * 2)**0.5 #angular momentum
+  v = h/rmin
+  return [Particle(rmin/2., 0, 0, 0, 0, v/2., "A"), \
+    Particle(-rmin/2., 0, 0, 0, 0, -v/2., "B")]
+
+# four body problem with inner semimajor axis a1, eccentricity e1
+#                        outer semimajor axis a2, eccentricity e2
+def doublekepler(a1, e1, a2, e2, NEWTON_G):
+  particles = kepler(a1, e1, NEWTON_G) #inner binary
+  rmin = a2 * (1-e2) #outer periastron
+  h = (rmin * (1+e2) * 9 * NEWTON_G * 2)**0.5 #outer angular momentum
+    # 9 because +1 from other outer binary, and inner binary is twice as close
+    # (x4) and is composed of two stars (x2), giving +8
+  v = h/rmin
+  particles.extend([Particle(rmin/2., 0, 0, 0, 0, v/2., "C"), \
+    Particle(-rmin/2., 0, 0, 0, 0, -v/2., "D")]) #outer binary
+  return particles
+
+
+#########################################################################################################################################################################
 
 # Ecuacion de movimiento
 
@@ -228,37 +256,7 @@ def calcula_energia_total(cuerpos):
 
     return ekin + epot
 
-
-    ## constantes
-
-MASA_SOL = 1.9891E30        # kg
-
-MASA_JUPITER = 1.898E27     # kg
-
-MASA_TIERRA = 5.972E24      # kg
-
-MASA_LUNA = 7.3476E22       # kg
-
-DISTANCIA_LUNA = 3.844E8    # metros
-
-
-
-# Método de Euler
-# dt en segundos
-
-
-def euler_step(cuerpos, dt):
-    for cuerpo in cuerpos:
-        cuerpo['posicion'] += cuerpo['velocidad'] * dt
-        aceleracion = calcular_aceleracion(cuerpo, cuerpos)
-        cuerpo['velocidad'] += aceleracion * dt
-
-def calcular_aceleracion(cuerpo, cuerpos):
-    aceleracion = 0.0
-    for c in cuerpos:
-        if np.any(cuerpo['posicion'] != c['posicion']):
-            aceleracion += aceleracion_gravitacional(cuerpo['posicion'], c['posicion'], c['masa'])
-    return aceleracion
+######################################################################################################################################################
 
 # Metodo Leapfrog
 # dt en segundos
@@ -282,9 +280,6 @@ def leapfrog_step(cuerpos, aceleraciones, dt):
         i += 1
 
 
-
-
-
 # inicializacion de condiciones iniciales
 
 # Un día en segundos
@@ -303,97 +298,5 @@ for estrella in galaxia2:
     estrella.x += 10  # Desplazamiento en x
     estrella.vx = -0.01  # Velocidad inicial en x para que se mueva hacia la galaxia1
 
-# Listas en memoria para guardar todos los datos de la evolución para luego graficarlos.
 
-historia_x1 = []
-historia_y1 = []
-historia_z1 = []
-
-historia_x2 = []
-historia_y2 = []
-historia_z2 = []
-
-historia_x3 = []
-historia_y3 = []
-historia_z3 = []
-
-# Guardamos la energia total al inicio de la simulación
-# para verificar que al final el sistema conserve la energía
-etot_inicial = calcula_energia_total(cuerpos)
-
-guarde_cada = 10
-
-aceleraciones_i0 = []
-
-i = 0
-
-# for cuerpo in cuerpos:
-#     aceleraciones_i0.insert(i, calcular_aceleracion(cuerpo, cuerpos))
-#     i += 1
-
-while steps >= 0:
-    # leapfrog_step(cuerpos, aceleraciones_i0, dt)
-    euler_step(cuerpos, dt)
-    # Mensaje para ir viendo el avance del proceso
-    if steps % 1000 == 0:
-        print ("Faltan %d steps " % (steps))
-
-    # En cada paso, guardamos los valores de posición y velocidad para graficarlos al final
-
-    if steps % guarde_cada == 0:
-
-        historia_x1.append(sol['posicion'][0])
-        historia_y1.append(sol['posicion'][1])
-        historia_z1.append(sol['posicion'][2])
-
-        historia_x2.append(tierra['posicion'][0])
-        historia_y2.append(tierra['posicion'][1])
-        historia_z2.append(tierra['posicion'][2])
-
-        historia_x3.append(jupiter['posicion'][0])
-        historia_y3.append(jupiter['posicion'][1])
-        historia_z3.append(jupiter['posicion'][2])
-
-    steps -= 1
-
-etot_final = calcula_energia_total(cuerpos)
-print ("Energia total inicial: %s" % (str(etot_inicial)))
-print ("Energia total final: %s" % (str(etot_final)))
-print ("Ration: %s" % (abs(etot_inicial) / abs(etot_final)))
-# ---------------------------
-
-fig = plt.figure("Sistema Sol - Tierra - Jupiter")
-ax = fig.add_subplot(111, title='xx')
-
-sp, = ax.plot([], [], 'ro')
-
-# Limites de visualizacion del canvas para que se base en las distancias
-# reales de las particulas
-ax.set_ylim(min([min(historia_y1), min(historia_y2), min(historia_y3)]),
-            max([max(historia_y1), max(historia_y2), max(historia_y3)]))
-
-ax.set_xlim(min([min(historia_x1), min(historia_x2), min(historia_x3)]),
-            max([max(historia_x1), max(historia_x2), max(historia_x3)]))
-
-# Funcion que se llama para generar cada frame de la animación
-# Recibe un parámetro i que puede ser usado como indice
-# Lo que hace es actualizar los datos del plot generado arriba
-
-def update(i):
-    # Posiciones x de las 3 particulas
-    x = [historia_x1[i], historia_x2[i], historia_x3[i]]
-    # Posiciones y de las 3 particulas
-    y = [historia_y1[i], historia_y2[i], historia_y3[i]]
-    sp.set_data(x, y)
-    ax.set_title('Frame dibujado: %d' % (i))
-    return sp,
-
-# Creacion de la animación, 100 frames signifca que cada 100 ms
-# llama a update con un valor entre 0 y 99
-# Con repeat = False hace que solo se dibujen los frames una vez
-#ani = animation.FuncAnimation(fig, update, frames=len(historia_x1), interval=50, repeat=False)
-#ani.save('ejemplo.avi')
-#plt.show()
-ani = animation.FuncAnimation(fig, update, frames=len(historia_x1), interval=20, repeat=False)
-display(HTML(ani.to_jshtml()))
 
