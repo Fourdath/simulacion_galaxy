@@ -1,16 +1,53 @@
-
 import scipy as sp
 import scipy.constants
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
+class Vector:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __str__(self):
+        return "<{:.6f}, {:.6f}>".format(self.x, self.y)
+
+    def copy(self):
+        return Vector(self.x, self.y)
+
+    def equals(self, other):
+        return self.x == other.x and self.y == other.y
+
+    def add(self, b):
+        self.x += b.x
+        self.y += b.y
+
+    def sub(self, b):
+        self.x -= b.x
+        self.y -= b.y
+
+    def mult(self, scalar):
+        self.x *= scalar
+        self.y *= scalar
+
+    def mag_squared(self):
+        return self.x * self.x + self.y * self.y
+
+    def mag(self):
+        return (self.mag_squared())**0.5
+
+    def normalize(self):
+        magnitude = self.mag()
+        if magnitude != 0:
+            self.mult(1 / magnitude)
+
 ########################################################################################################################################################
 # holds phase space information of a particle
 class Particle:
-  def __init__(self, x, y, z, vx, vy, vz, name):
-    self.x, self.y, self.z = x, y, z
-    self.vx, self.vy, self.vz = vx, vy, vz
+  def __init__(self, x, y, vx, vy, name):
+    self.x, self.y = x, y
+    self.vx, self.vy, = vx, vy
     self.name = name
 
   # kick step where the velocity is changed by force
@@ -18,14 +55,14 @@ class Particle:
     # distance
     rx = cell.xcen - self.x
     ry = cell.ycen - self.y
-    rz = cell.zcen - self.z
-    r2 = rx*rx + ry*ry + rz*rz
+    
+    r2 = rx*rx + ry*ry 
 
     # if outside softening length, don't need softening
     if r2 > SOFTENING*SOFTENING:
       self.vx += NEWTON_G * TIMESTEP * rx * cell.n / r2**1.5
       self.vy += NEWTON_G * TIMESTEP * ry * cell.n / r2**1.5
-      self.vz += NEWTON_G * TIMESTEP * rz * cell.n / r2**1.5
+      
     # else use solid sphere softening
     else:
       r = r2**0.5
@@ -33,13 +70,13 @@ class Particle:
       f = x * (8 - 9 * x + 2 * x * x * x) # Dyer and Ip 1993, ApJ 409(1)
       self.vx += NEWTON_G * TIMESTEP * f * rx * cell.n / (SOFTENING*SOFTENING*r)
       self.vy += NEWTON_G * TIMESTEP * f * ry * cell.n / (SOFTENING*SOFTENING*r)
-      self.vz += NEWTON_G * TIMESTEP * f * rz * cell.n / (SOFTENING*SOFTENING*r)
+      
 
   # drift step where position is changed by velocity
   def drift(self, TIMESTEP):
     self.x += self.vx * TIMESTEP
     self.y += self.vy * TIMESTEP
-    self.z += self.vz * TIMESTEP
+    
 
 # trees are composed of cells referring to their daughter cells
 class Cell:
@@ -187,7 +224,7 @@ def plummersphere(N, a, NEWTON_G):
       vx.append(vmag*np.sin(theta)*np.cos(phi))
       vy.append(vmag*np.sin(theta)*np.sin(phi))
       vz.append(vmag*np.cos(theta))
-  return [Particle(x[i], y[i], z[i], vx[i], vy[i], vz[i], str(i)) \
+  return [Particle(x[i], y[i],  vx[i], vy[i],  str(i)) \
     for i in range(N)]
 
 # two body problem with orbit semimajor axis a, eccentricity e
@@ -213,6 +250,9 @@ def doublekepler(a1, e1, a2, e2, NEWTON_G):
 
 
 #########################################################################################################################################################################
+
+
+
 
 # Ecuacion de movimiento
 
@@ -297,6 +337,31 @@ galaxia2 = plummersphere(N, a, NEWTON_G)
 for estrella in galaxia2:
     estrella.x += 10  # Desplazamiento en x
     estrella.vx = -0.01  # Velocidad inicial en x para que se mueva hacia la galaxia1
+
+
+
+def main():
+    # Inicialización de las galaxias y condiciones iniciales
+    galaxia_A, galaxia_B = inicializar_galaxias()
+    
+    # Duración de la simulación y paso de tiempo
+    tiempo_total = 100  # Por ejemplo
+    dt = 0.1  # Paso de tiempo
+    
+    # Bucle principal de la simulación
+    for t in range(0, tiempo_total, dt):
+        # Calcular aceleraciones para todas las partículas
+        for particula in galaxia_A + galaxia_B:
+            # Aquí debemos calcular la aceleración total en la partícula
+            # usando todas las demás partículas y la función de aceleración gravitacional
+            calcular_aceleracion(particula, galaxia_A + galaxia_B)
+        
+        # Actualizar posiciones y velocidades usando el método Leapfrog
+        for particula in galaxia_A + galaxia_B:
+            particula.actualizar_posicion(dt)
+            particula.actualizar_velocidad(dt)
+        
+        # Opcional: Guardar o visualizar el estado actual de la simulación
 
 
 
