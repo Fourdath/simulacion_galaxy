@@ -1,17 +1,52 @@
 import scipy as sp
+import math
 import scipy.constants
 import random
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from matplotlib.animation import FuncAnimation
 
+
+class TreeNode:
+    def __init__(self, x, y, w):
+        self.x = x
+        self.y = y
+        self.w = w
+        self.children = [None, None, None, None]  # NW, NE, SW, SE
+        self.leaf = True
+        self.particle = None
+        self.total_center = Vector(0, 0)
+        self.center = None
+        self.total_mass = 0
+        self.count = 0
+
+    def split(self):
+        new_width = self.w * 0.5
+        self.children[0] = TreeNode(self.x, self.y, new_width)  # NW
+        self.children[1] = TreeNode(self.x + new_width, self.y, new_width)  # NE
+        self.children[2] = TreeNode(self.x, self.y + new_width, new_width)  # SW
+        self.children[3] = TreeNode(self.x + new_width, self.y + new_width, new_width)  # SE
+        self.leaf = False
+
+    def which(self, v):
+        half_width = self.w * 0.5
+        if v.y < self.y + half_width:
+            return 0 if v.x < self.x + half_width else 1
+        return 2 if v.x < self.x + half_width else 3
+
+    def insert(self, new_particle):
+        # Implementar la inserción aquí
+        pass  # Eliminar esta línea cuando implementes la función
+
+    # Más métodos aquí
 class Vector:
     def __init__(self, x, y):
         self.x = x
         self.y = y
 
     def __str__(self):
-        return "<{:.6f}, {:.6f}>".format(self.x, self.y)
+        return '<{:.6f}, {:.6f}>'.format(self.x, self.y)
 
     def copy(self):
         return Vector(self.x, self.y)
@@ -42,41 +77,50 @@ class Vector:
         if magnitude != 0:
             self.mult(1 / magnitude)
 
+
+
 ########################################################################################################################################################
 # holds phase space information of a particle
 class Particle:
-  def __init__(self, x, y, vx, vy, name):
-    self.x, self.y = x, y
-    self.vx, self.vy, = vx, vy
-    self.name = name
+    def __init__(self, x, y, vx, vy, name):
+        self.x, self.y = x, y
+        self.vx, self.vy = vx, vy
+        self.name = name
+        self.next_vel = Vector(0, 0)
+        # Asumiré que quieres inicializar la aceleración a cero, pero puedes cambiar esto si lo necesitas.
+        self.ax, self.ay = 0, 0
 
-  # kick step where the velocity is changed by force
-  def kick(self, cell, NEWTON_G, TIMESTEP, SOFTENING):
-    # distance
-    rx = cell.xcen - self.x
-    ry = cell.ycen - self.y
-    
-    r2 = rx*rx + ry*ry 
+    def actualizar_posicion(self, dt):
+        self.x += self.vx * dt
+        self.y += self.vy * dt
 
-    # if outside softening length, don't need softening
-    if r2 > SOFTENING*SOFTENING:
-      self.vx += NEWTON_G * TIMESTEP * rx * cell.n / r2**1.5
-      self.vy += NEWTON_G * TIMESTEP * ry * cell.n / r2**1.5
-      
-    # else use solid sphere softening
-    else:
-      r = r2**0.5
-      x = r / SOFTENING
-      f = x * (8 - 9 * x + 2 * x * x * x) # Dyer and Ip 1993, ApJ 409(1)
-      self.vx += NEWTON_G * TIMESTEP * f * rx * cell.n / (SOFTENING*SOFTENING*r)
-      self.vy += NEWTON_G * TIMESTEP * f * ry * cell.n / (SOFTENING*SOFTENING*r)
-      
+    def actualizar_velocidad(self, dt):
+        self.vx += self.ax * dt
+        self.vy += self.ay * dt
 
-  # drift step where position is changed by velocity
-  def drift(self, TIMESTEP):
-    self.x += self.vx * TIMESTEP
-    self.y += self.vy * TIMESTEP
-    
+    def kick(self, cell, NEWTON_G, TIMESTEP, SOFTENING):
+        # distance
+        rx = cell.xcen - self.x
+        ry = cell.ycen - self.y
+        r2 = rx*rx + ry*ry 
+
+        # if outside softening length, don't need softening
+        if r2 > SOFTENING*SOFTENING:
+            self.vx += NEWTON_G * TIMESTEP * rx * cell.n / r2**1.5
+            self.vy += NEWTON_G * TIMESTEP * ry * cell.n / r2**1.5
+        # else use solid sphere softening
+        else:
+            r = r2**0.5
+            x = r / SOFTENING
+            f = x * (8 - 9 * x + 2 * x * x * x) # Dyer and Ip 1993, ApJ 409(1)
+            self.vx += NEWTON_G * TIMESTEP * f * rx * cell.n / (SOFTENING*SOFTENING*r)
+            self.vy += NEWTON_G * TIMESTEP * f * ry * cell.n / (SOFTENING*SOFTENING*r)
+
+    # drift step where position is changed by velocity
+    def drift(self, TIMESTEP):
+        self.x += self.vx * TIMESTEP
+        self.y += self.vy * TIMESTEP
+
 
 # trees are composed of cells referring to their daughter cells
 class Cell:
@@ -226,7 +270,7 @@ def plummersphere(N, a, NEWTON_G):
       vz.append(vmag*np.cos(theta))
   return [Particle(x[i], y[i],  vx[i], vy[i],  str(i)) \
     for i in range(N)]
-
+"""
 # two body problem with orbit semimajor axis a, eccentricity e
 def kepler(a, e, NEWTON_G):
   rmin = a * (1-e) #periastron
@@ -247,85 +291,56 @@ def doublekepler(a1, e1, a2, e2, NEWTON_G):
   particles.extend([Particle(rmin/2., 0, 0, 0, 0, v/2., "C"), \
     Particle(-rmin/2., 0, 0, 0, 0, -v/2., "D")]) #outer binary
   return particles
-
+"""
 
 #########################################################################################################################################################################
 
+# Constantes
+G = 6.67430e-11  # Constante gravitacional
+r = 1.0  # Un valor de referencia, puedes ajustarlo según tus necesidades
+dt = 0.1  # Paso de tiempo, ya lo tienes definido en tu código
+theta = 0.5  # Un valor común para el criterio de Barnes-Hut, pero es ajustable
 
+# Funciones auxiliares
+def dist_squared(a, b):
+    return (a.x - b.x)**2 + (a.y - b.y)**2
 
+def mult(vector, scalar):
+    return Vector(vector.x * scalar, vector.y * scalar)
 
-# Ecuacion de movimiento
+def sub(a, b):
+    return Vector(a.x - b.x, a.y - b.y)
 
+def gravityAcc(a, b, m_b):
+    dSq = dist_squared(a, b)
+    if dSq <= 4 * r * r:
+        return Vector(0, 0)
+    return mult(sub(a, b), dt * G * m_b / (dSq * math.sqrt(dSq)))
 
-# Aceleracion sobre particula i, ejercida por particula j
-# La magnitud del vector se calcula con np.linalg.norm
+# Suponiendo que ya tenemos las clases Vector, Particle y TreeNode definidas...
 
+def gravity(particles, root):
+    for p in particles:
+        gravitate(p, root)
 
-def aceleracion_gravitacional(ri, rj, mj):
-    diff = rj - ri
-    return sp.constants.G * mj * (diff / (np.linalg.norm(diff) ** 3))
+def gravitate(p, tn):
+    if tn.leaf:
+        if tn.particle is None or p == tn.particle:
+            return
+        p.vel.add(gravityAcc(tn.particle.pos, p.pos, mass))
+        return
 
-# Calculo de energia cinética
+    if tn.center is None:
+        tn.center = mult(tn.total_center, 1.0 / tn.count)
+    if tn.w / dist(p.pos, tn.center) < theta:
+        p.vel.add(gravityAcc(tn.center, p.pos, tn.total_mass))
+        return
 
+    for child in tn.children:
+        gravitate(p, child)
 
-def energia_cinetica(m, v):
-    return 0.5 * m * (np.linalg.norm(v) ** 2)
-
-# Energía potencial gravitacional para 2 cuerpos
-# r es separacion entre ambas masas
-
-
-def energia_potencial(mi, mj, ri, rj):
-    diff = rj - ri
-    return (-sp.constants.G * mi * mj) / np.linalg.norm(diff)
-
-#Calculo de la energia total: cinetica + potencial
-
-def calcula_energia_total(cuerpos):
-    ekin = 0
-    epot = 0
-    for cuerpo in cuerpos:
-        ekin += energia_cinetica(cuerpo['masa'], cuerpo['velocidad'])
-        for c in cuerpos:
-            if np.any(cuerpo['posicion'] != c['posicion']):
-                epot += energia_potencial(cuerpo['masa'], c['masa'],
-                                          cuerpo['posicion'], c['posicion'])
-
-    #Se divide entre 2 porque el aporte de cada particula se calculó 2 veces
-    epot /= 2
-
-    return ekin + epot
-
-######################################################################################################################################################
-
-# Metodo Leapfrog
-# dt en segundos
-
-def leapfrog_step(cuerpos, aceleraciones, dt):
-    i = 0
-
-    velocidades = []
-
-    for cuerpo in cuerpos:
-        velocity_half = cuerpo['velocidad'] + (aceleraciones[i] * (dt / 2.))
-        velocidades.insert(i, velocity_half)
-        cuerpo['posicion'] += (velocity_half * dt)
-        i += 1
-
-    i = 0
-    for cuerpo in cuerpos:
-        # Calculo las aceleraciones para el i + 1 basado en la nueva posicion
-        aceleraciones[i] = calcular_aceleracion(cuerpo, cuerpos)
-        cuerpo['velocidad'] = velocidades[i] + (aceleraciones[i] * (dt / 2.))
-        i += 1
-
-
-# inicializacion de condiciones iniciales
-
-# Un día en segundos
-dt = 60. * 60. * 24
-
-# Condiciones iniciales
+# Inicialización de condiciones iniciales
+dt = 60. * 60. * 24  # Un día en segundos
 N = 1000  # Número de estrellas por galaxia
 a = 5  # Radio de escala en parsecs
 NEWTON_G = 6.67430e-11  # Constante gravitacional
@@ -333,35 +348,73 @@ NEWTON_G = 6.67430e-11  # Constante gravitacional
 galaxia1 = plummersphere(N, a, NEWTON_G)
 galaxia2 = plummersphere(N, a, NEWTON_G)
 
-# Desplaza la segunda galaxia para ponerla en una trayectoria de colisión
-for estrella in galaxia2:
-    estrella.x += 10  # Desplazamiento en x
-    estrella.vx = -0.01  # Velocidad inicial en x para que se mueva hacia la galaxia1
+def build_tree(particles):
+    # Definir los límites de tu espacio de simulación. Ajusta según sea necesario.
+    root = TreeNode(0, 0, 1000)  # Asume un espacio de 1000x1000 para este ejemplo
+
+    for particle in particles:
+        root.insert(particle)
+
+    return root
+def gravity(particles, root):
+    for p in particles:
+        gravitate(p, root)
 
 
+def update_positions(particles, root):
+    for particle in particles:
+        particle.kick(root, NEWTON_G, dt, SOFTENING)
+        particle.drift(dt)
 
-def main():
-    # Inicialización de las galaxias y condiciones iniciales
-    galaxia_A, galaxia_B = inicializar_galaxias()
+def inicializar_galaxias():
+    N = 1000  # Número de estrellas por galaxia
+    a = 5  # Radio de escala en parsecs
+    NEWTON_G = 6.67430e-11  # Constante gravitacional
     
-    # Duración de la simulación y paso de tiempo
-    tiempo_total = 100  # Por ejemplo
-    dt = 0.1  # Paso de tiempo
+    # Generar las partículas para cada galaxia usando la función plummersphere
+    galaxia1 = plummersphere(N, a, NEWTON_G)
+    galaxia2 = plummersphere(N, a, NEWTON_G)
     
-    # Bucle principal de la simulación
-    for t in range(0, tiempo_total, dt):
-        # Calcular aceleraciones para todas las partículas
-        for particula in galaxia_A + galaxia_B:
-            # Aquí debemos calcular la aceleración total en la partícula
-            # usando todas las demás partículas y la función de aceleración gravitacional
-            calcular_aceleracion(particula, galaxia_A + galaxia_B)
-        
-        # Actualizar posiciones y velocidades usando el método Leapfrog
-        for particula in galaxia_A + galaxia_B:
-            particula.actualizar_posicion(dt)
-            particula.actualizar_velocidad(dt)
-        
-        # Opcional: Guardar o visualizar el estado actual de la simulación
+    return galaxia1, galaxia2
 
 
 
+
+
+# Función para actualizar las posiciones de las partículas en un paso de tiempo
+def update_positions(particles, root):
+    gravity(particles, root)  # Actualizar velocidades y posiciones
+    for particle in particles:
+        particle.actualizar_posicion(dt)
+        particle.actualizar_velocidad(dt)
+
+# Función para inicializar las galaxias y construir el árbol
+def inicializar_galaxias():
+    # ... (tu código para inicializar las galaxias) ...
+    return galaxia1, galaxia2, build_tree(galaxia1 + galaxia2)
+
+# Crear la animación
+def animate():
+    galaxia1, galaxia2, tree = inicializar_galaxias()
+
+    fig = plt.figure("Sistema de Colisión de Galaxias")
+    ax = fig.add_subplot(111)
+    sp, = ax.plot([], [], 'ro')
+
+    ax.set_ylim(-100, 100)  # Ajusta según tus límites
+    ax.set_xlim(-100, 100)
+
+    def update(i):
+        update_positions(galaxia1 + galaxia2, tree)
+
+        x = [p.x for p in galaxia1 + galaxia2]
+        y = [p.y for p in galaxia1 + galaxia2]
+        sp.set_data(x, y)
+        ax.set_title('Frame dibujado: %d' % (i))
+        return sp,
+
+    ani = FuncAnimation(fig, update, frames=range(100), interval=20, repeat=False)
+    plt.show()
+
+# Llamar a la función para crear la animación
+animate()
