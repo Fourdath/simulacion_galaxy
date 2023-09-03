@@ -6,52 +6,78 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.animation import FuncAnimation
+
+
 class TreeNode:
     def __init__(self, x, y, w):
-        self.x, self.y, self.w = x, y, w
-        self.center = Vector(self.x + self.w / 2, self.y + self.w / 2)
-        self.leaf = True
+        self.x = x
+        self.y = y
+        self.w = w
+        self.center = Vector(x + w / 2, y + w / 2)
         self.particle = None
-        self.children = []
+        self.leaf = True
+        self.children = [None, None, None, None]
         self.total_mass = 0
 
-    def child_coords(self):
-        hw = self.w / 2
-        return [(self.x, self.y), (self.x + hw, self.y), (self.x, self.y + hw), (self.x + hw, self.y + hw)]
-
     def which(self, particle):
-        return 0 if particle.x < self.center.x else 1 + (0 if particle.y < self.center.y else 1)
-
-    def contains(self, particle):
-        return self.x <= particle.x < self.x + self.w and self.y <= particle.y < self.y + self.w
-
+        if particle.x < self.center.x:
+            if particle.y < self.center.y:
+                return 0
+            else:
+                return 1
+        else:
+            if particle.y < self.center.y:
+                return 2
+            else:
+                return 3
     def insert(self, new_particle):
+      new_particle.x += random.uniform(-0.1, 0.1)
+      new_particle.y += random.uniform(-0.1, 0.1)
+
+      if self.leaf:
+          if self.particle is None:
+              self.particle = new_particle
+              self.total_mass = new_particle.mass
+              return
+          else:
+              return
+      else:
+          quadrant = self.which(new_particle)
+          self.children[quadrant].insert(new_particle)
+          self.total_mass += new_particle.mass
+
+""" 
+    def insert(self, new_particle):
+        new_particle.x += random.uniform(-0.1, 0.1)
+        new_particle.y += random.uniform(-0.1, 0.1)
+
         if self.leaf:
             if self.particle is None:
                 self.particle = new_particle
+                self.total_mass = new_particle.mass
                 return
             else:
                 old_particle = self.particle
                 self.leaf = False
-                self.children = [TreeNode(x, y, self.w / 2) for x, y in self.child_coords()]
+                self.children[0] = TreeNode(self.x, self.y, self.w / 2)
+                self.children[1] = TreeNode(self.x, self.y + self.w / 2, self.w / 2)
+                self.children[2] = TreeNode(self.x + self.w / 2, self.y, self.w / 2)
+                self.children[3] = TreeNode(self.x + self.w / 2, self.y + self.w / 2, self.w / 2)
                 
-                # Insertar la partícula antigua en uno de los nuevos nodos hijos
                 quadrant_old = self.which(old_particle)
-                self.children[quadrant_old].insert(old_particle)
-                
-                # Insertar la nueva partícula en uno de los nuevos nodos hijos
                 quadrant_new = self.which(new_particle)
+                
+                self.children[quadrant_old].insert(old_particle)
                 self.children[quadrant_new].insert(new_particle)
                 
-                self.particle = None  # Limpia la partícula del nodo padre
+                self.particle = None
+                self.total_mass = old_particle.mass + new_particle.mass
                 return
         else:
             quadrant = self.which(new_particle)
-            if self.children[quadrant].contains(new_particle):
-            # Ajuste para evitar la recursión infinita
-                new_particle.x += 0.1
-                new_particle.y += 0.1
             self.children[quadrant].insert(new_particle)
+            self.total_mass += new_particle.mass
+"""
 class Vector:
     def __init__(self, x, y):
         self.x = x
@@ -99,7 +125,8 @@ class Particle:
         self.vx, self.vy = vx, vy
         self.mass = mass
         self.name = name
-        self.next_vel = Vector(0, 0)
+        self.vel = Vector(0, 0)
+        #self.pos = [x, y] 
         # Asumiré que quieres inicializar la aceleración a cero, pero puedes cambiar esto si lo necesitas.
         self.ax, self.ay = 0, 0
 
@@ -111,7 +138,7 @@ class Particle:
         self.vx += self.ax * dt
         self.vy += self.ay * dt
 
-    def kick(self, node, theta):
+    def kick(self, node):#,theta
       # Si el nodo es una hoja y contiene una partícula
       if node.leaf and node.particle is not None and node.particle != self:
           r = Vector(node.particle.x - self.x, node.particle.y - self.y)
@@ -174,11 +201,36 @@ def plummersphere_2D(N, a, NEWTON_G):
             
             # Generar una masa aleatoria para la estrella dentro de un rango [min_mass, max_mass]
             min_mass = 0.8  # Puedes ajustar este valor
-            max_mass = 1.2  # Puedes ajustar este valor
+            max_mass = 50  # Puedes ajustar este valor
             star_mass = np.random.uniform(min_mass, max_mass)
             masses.append(star_mass)
             
     return [Particle(x[i], y[i], vx[i], vy[i], masses[i], str(i)) for i in range(N)]
+
+
+def visualize_particles(particles):
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.set_xlim(-1000, 1000)
+    ax.set_ylim(-1000, 1000)
+    ax.set_title("Distribución inicial de partículas")
+
+    # Extraer las coordenadas x e y de las partículas
+    x = [particle.x for particle in particles]
+    y = [particle.y for particle in particles]
+
+    sc = ax.scatter(x, y, s=5)
+
+    def init():
+        sc.set_offsets([])
+        return (sc,)
+
+    def update(frame):
+        # Aquí, simplemente estamos visualizando la distribución inicial, por lo que no hay actualización
+        return (sc,)
+
+    ani = FuncAnimation(fig, update, frames=range(1), init_func=init, blit=True, repeat=False)
+    plt.show()
+
 
 #########################################################################################################################################################################
 
@@ -211,13 +263,13 @@ def gravitate(p, tn):
     if tn.leaf:
         if tn.particle is None or p == tn.particle:
             return
-        p.vel.add(mult(gravityAcc(tn.particle.pos, p.pos, tn.particle.mass), dt))  # Multiplicamos por dt aquí
+        p.vel.add(mult(gravityAcc(tn.particle, p, tn.particle.mass), dt))  # Multiplicamos por dt aquí
         return
 
     if tn.center is None:
         tn.center = mult(tn.total_center, 1.0 / tn.count)
-    if tn.w / dist(p.pos, tn.center) < theta:
-        p.vel.add(mult(gravityAcc(tn.center, p.pos, tn.total_mass), dt))  # Multiplicamos por dt aquí
+    if tn.w / dist(p, tn.center) < theta:
+        p.vel.add(mult(gravityAcc(tn.center, p, tn.total_mass), dt))  # Multiplicamos por dt aquí
         return
 
     for child in tn.children:
@@ -255,8 +307,10 @@ def update_positions(particles, dt, NEWTON_G, SOFTENING):
     root = build_tree(particles)  # Reconstruir el árbol en cada paso de tiempo
     gravity(particles, root)  # Actualizar las velocidades
     for particle in particles:
-        particle.kick(root, NEWTON_G, dt, SOFTENING)
+        particle.kick(root)#, NEWTON_G, dt, SOFTENING)
         particle.drift(dt)
+
+
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML, display
 
@@ -270,8 +324,8 @@ def animate():
 
     fig, ax = plt.subplots()
     sc = ax.scatter([], [])
-    ax.set_xlim(-100, 100)
-    ax.set_ylim(-100, 100)
+    ax.set_xlim(-300, 300)
+    ax.set_ylim(-300, 300)
 
     def init():
         data = [(p.x, p.y) for p in particles]
