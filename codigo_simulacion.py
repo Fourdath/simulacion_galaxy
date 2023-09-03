@@ -6,63 +6,52 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.animation import FuncAnimation
-
-
 class TreeNode:
     def __init__(self, x, y, w):
-        self.x = x
-        self.y = y
-        self.w = w
-        self.children = [None, None, None, None]  # NW, NE, SW, SE
+        self.x, self.y, self.w = x, y, w
+        self.center = Vector(self.x + self.w / 2, self.y + self.w / 2)
         self.leaf = True
         self.particle = None
-        self.total_center = Vector(0, 0)
-        self.center = None
+        self.children = []
         self.total_mass = 0
-        self.count = 0
 
-    def split(self):
-        new_width = self.w * 0.5
-        self.children[0] = TreeNode(self.x, self.y, new_width)  # NW
-        self.children[1] = TreeNode(self.x + new_width, self.y, new_width)  # NE
-        self.children[2] = TreeNode(self.x, self.y + new_width, new_width)  # SW
-        self.children[3] = TreeNode(self.x + new_width, self.y + new_width, new_width)  # SE
-        self.leaf = False
+    def child_coords(self):
+        hw = self.w / 2
+        return [(self.x, self.y), (self.x + hw, self.y), (self.x, self.y + hw), (self.x + hw, self.y + hw)]
 
-    def which(self, pos):
-      half_width = self.w * 0.5
-      if pos.y < self.y + half_width:
-          return 0 if pos.x < self.x + half_width else 1
-      return 2 if pos.x < self.x + half_width else 3
+    def which(self, particle):
+        return 0 if particle.x < self.center.x else 1 + (0 if particle.y < self.center.y else 1)
 
+    def contains(self, particle):
+        return self.x <= particle.x < self.x + self.w and self.y <= particle.y < self.y + self.w
 
     def insert(self, new_particle):
-      # Actualiza el centro de masa y la masa total del nodo
-      new_total_mass = self.total_mass + new_particle.mass
-      new_total_center = Vector(
-          (self.total_center.x * self.total_mass + new_particle.pos.x * new_particle.mass) / new_total_mass,
-          (self.total_center.y * self.total_mass + new_particle.pos.y * new_particle.mass) / new_total_mass
-      )  
-      self.total_mass = new_total_mass
-      self.total_center = new_total_center
-
-    # Si el nodo es una hoja y no tiene ninguna partícula
-      if self.leaf and self.particle is None:
-          self.particle = new_particle
-          return
-
-    # Si el nodo es una hoja y ya tiene una partícula
-      if self.leaf and self.particle is not None:
-          old_particle = self.particle
-          self.split()  # Divide el nodo en cuatro hijos
-          self.insert(old_particle)  # Inserta la partícula existente en el nodo hijo correspondiente
-          self.insert(new_particle)  # Inserta la nueva partícula en el nodo hijo correspondiente
-          return
-
-    # Si el nodo no es una hoja
-      if not self.leaf:
-          quadrant = self.which(new_particle.pos)  # Determina en qué cuadrante insertar la partícula
-          self.children[quadrant].insert(new_particle)  # Inserta la partícula en el nodo hijo correspondiente
+        if self.leaf:
+            if self.particle is None:
+                self.particle = new_particle
+                return
+            else:
+                old_particle = self.particle
+                self.leaf = False
+                self.children = [TreeNode(x, y, self.w / 2) for x, y in self.child_coords()]
+                
+                # Insertar la partícula antigua en uno de los nuevos nodos hijos
+                quadrant_old = self.which(old_particle)
+                self.children[quadrant_old].insert(old_particle)
+                
+                # Insertar la nueva partícula en uno de los nuevos nodos hijos
+                quadrant_new = self.which(new_particle)
+                self.children[quadrant_new].insert(new_particle)
+                
+                self.particle = None  # Limpia la partícula del nodo padre
+                return
+        else:
+            quadrant = self.which(new_particle)
+            if self.children[quadrant].contains(new_particle):
+            # Ajuste para evitar la recursión infinita
+                new_particle.x += 0.1
+                new_particle.y += 0.1
+            self.children[quadrant].insert(new_particle)
 class Vector:
     def __init__(self, x, y):
         self.x = x
@@ -268,10 +257,16 @@ def update_positions(particles, dt, NEWTON_G, SOFTENING):
     for particle in particles:
         particle.kick(root, NEWTON_G, dt, SOFTENING)
         particle.drift(dt)
+from matplotlib.animation import FuncAnimation
+from IPython.display import HTML, display
 
-# Función para animar
-def animate(N, a, NEWTON_G, dt, SOFTENING):
+import matplotlib.pyplot as plt
+
+# ... (tu código anterior para las clases y funciones)
+
+def animate():
     galaxia1, galaxia2 = inicializar_galaxias(N, a, NEWTON_G)
+    particles = galaxia1 + galaxia2
 
     fig, ax = plt.subplots()
     sc = ax.scatter([], [])
@@ -279,18 +274,21 @@ def animate(N, a, NEWTON_G, dt, SOFTENING):
     ax.set_ylim(-100, 100)
 
     def init():
-        data = [(p.x, p.y) for p in galaxia1 + galaxia2]
+        data = [(p.x, p.y) for p in particles]
         sc.set_offsets(data)
         return sc,
 
     def update(frame):
-        update_positions(galaxia1 + galaxia2, dt, NEWTON_G, SOFTENING)
-        data = [(p.x, p.y) for p in galaxia1 + galaxia2]
+        root = build_tree(particles)  # Reconstruir el árbol en cada paso de tiempo
+        gravity(particles, root)  # Actualizar las velocidades
+        update_positions(particles, dt, NEWTON_G, SOFTENING)  # Actualizar las posiciones
+        data = [(p.x, p.y) for p in particles]
         sc.set_offsets(data)
         return sc,
 
     ani = FuncAnimation(fig, update, frames=range(100), init_func=init, blit=True)
-    plt.show()
+    return HTML(ani.to_jshtml())
+
 
 # Parámetros
 N = 1000
@@ -299,5 +297,4 @@ NEWTON_G = 6.67430e-11
 dt = 60. * 60. * 24
 SOFTENING = 0.1  # Ajusta según sea necesario
 
-# Llamar a la función para crear la animación
-animate(N, a, NEWTON_G, dt, SOFTENING)
+animate()
