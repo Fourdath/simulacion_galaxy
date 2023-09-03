@@ -29,17 +29,40 @@ class TreeNode:
         self.children[3] = TreeNode(self.x + new_width, self.y + new_width, new_width)  # SE
         self.leaf = False
 
-    def which(self, v):
-        half_width = self.w * 0.5
-        if v.y < self.y + half_width:
-            return 0 if v.x < self.x + half_width else 1
-        return 2 if v.x < self.x + half_width else 3
+    def which(self, pos):
+      half_width = self.w * 0.5
+      if pos.y < self.y + half_width:
+          return 0 if pos.x < self.x + half_width else 1
+      return 2 if pos.x < self.x + half_width else 3
+
 
     def insert(self, new_particle):
-        # Implementar la inserción aquí
-        pass  # Eliminar esta línea cuando implementes la función
+      # Actualiza el centro de masa y la masa total del nodo
+      new_total_mass = self.total_mass + new_particle.mass
+      new_total_center = Vector(
+          (self.total_center.x * self.total_mass + new_particle.pos.x * new_particle.mass) / new_total_mass,
+          (self.total_center.y * self.total_mass + new_particle.pos.y * new_particle.mass) / new_total_mass
+      )  
+      self.total_mass = new_total_mass
+      self.total_center = new_total_center
 
-    # Más métodos aquí
+    # Si el nodo es una hoja y no tiene ninguna partícula
+      if self.leaf and self.particle is None:
+          self.particle = new_particle
+          return
+
+    # Si el nodo es una hoja y ya tiene una partícula
+      if self.leaf and self.particle is not None:
+          old_particle = self.particle
+          self.split()  # Divide el nodo en cuatro hijos
+          self.insert(old_particle)  # Inserta la partícula existente en el nodo hijo correspondiente
+          self.insert(new_particle)  # Inserta la nueva partícula en el nodo hijo correspondiente
+          return
+
+    # Si el nodo no es una hoja
+      if not self.leaf:
+          quadrant = self.which(new_particle.pos)  # Determina en qué cuadrante insertar la partícula
+          self.children[quadrant].insert(new_particle)  # Inserta la partícula en el nodo hijo correspondiente
 class Vector:
     def __init__(self, x, y):
         self.x = x
@@ -82,9 +105,10 @@ class Vector:
 ########################################################################################################################################################
 # holds phase space information of a particle
 class Particle:
-    def __init__(self, x, y, vx, vy, name):
+    def __init__(self, x, y, vx, vy,mass, name):
         self.x, self.y = x, y
         self.vx, self.vy = vx, vy
+        self.mass = mass
         self.name = name
         self.next_vel = Vector(0, 0)
         # Asumiré que quieres inicializar la aceleración a cero, pero puedes cambiar esto si lo necesitas.
@@ -98,23 +122,35 @@ class Particle:
         self.vx += self.ax * dt
         self.vy += self.ay * dt
 
-    def kick(self, cell, NEWTON_G, TIMESTEP, SOFTENING):
-        # distance
-        rx = cell.xcen - self.x
-        ry = cell.ycen - self.y
-        r2 = rx*rx + ry*ry 
+    def kick(self, node, theta):
+      # Si el nodo es una hoja y contiene una partícula
+      if node.leaf and node.particle is not None and node.particle != self:
+          r = Vector(node.particle.x - self.x, node.particle.y - self.y)
+          dist_sq = r.mag_squared()
+          force_mag = G * node.particle.mass / (dist_sq * math.sqrt(dist_sq))
+          r.normalize()
+          r.mult(force_mag)
+          self.ax += r.x
+          self.ay += r.y
+          return
 
-        # if outside softening length, don't need softening
-        if r2 > SOFTENING*SOFTENING:
-            self.vx += NEWTON_G * TIMESTEP * rx * cell.n / r2**1.5
-            self.vy += NEWTON_G * TIMESTEP * ry * cell.n / r2**1.5
-        # else use solid sphere softening
-        else:
-            r = r2**0.5
-            x = r / SOFTENING
-            f = x * (8 - 9 * x + 2 * x * x * x) # Dyer and Ip 1993, ApJ 409(1)
-            self.vx += NEWTON_G * TIMESTEP * f * rx * cell.n / (SOFTENING*SOFTENING*r)
-            self.vy += NEWTON_G * TIMESTEP * f * ry * cell.n / (SOFTENING*SOFTENING*r)
+      # Si el nodo no es una hoja
+      if not node.leaf:
+          r = Vector(node.center.x - self.x, node.center.y - self.y)
+          dist = r.mag()
+
+          # Si el nodo cumple con el criterio de Barnes-Hut
+          if node.w / dist < theta:
+              force_mag = G * node.total_mass / (dist * dist * dist)
+              r.normalize()
+              r.mult(force_mag)
+              self.ax += r.x
+              self.ay += r.y
+          else:
+              # Repite el proceso recursivamente para cada hijo del nodo
+              for child in node.children:
+                  self.kick(child, theta)
+
 
     # drift step where position is changed by velocity
     def drift(self, TIMESTEP):
@@ -122,176 +158,38 @@ class Particle:
         self.y += self.vy * TIMESTEP
 
 
-# trees are composed of cells referring to their daughter cells
-class Cell:
-  def __init__(self, xmin, xmax, ymin, ymax, zmin, zmax, name):
-    self.xmin, self.xmax = xmin, xmax
-    self.ymin, self.ymax = ymin, ymax
-    self.zmin, self.zmax = zmin, zmax
-    self.name = name
-    # start with no particles
-    self.n = 0 
-    self.xcen, self.ycen, self.zcen = 0, 0, 0
-    self.daughters = []
-    self.particle = None
 
-  # test if a (x,y,z) coordinate is in this cell's bounds
-  def incell(self, x, y, z):
-    if x > self.xmin and x <= self.xmax and y > self.ymin and y <= self.ymax \
-      and z > self.zmin and z <= self.zmax:
-      return True
-    else:
-      return False
-
-  def add(self, particle):
-     # if particle not in bounds of cell, do nothing
-     if not self.incell(particle.x, particle.y, particle.z):
-       return
-
-     # if this cell already has some particles, also add this particle
-     # to our descendents
-     if self.n > 0:
-       # if this is the second particle this cell has encountered,
-       # need to make descendents, and try adding the first particle
-       # to our descendents
-       if self.n == 1:
-         self.makedaughters()
-         for daughter in self.daughters:
-           daughter.add(self.particle)
-         self.particle = None # this cell no longer holds just 1 particle
-       # add incoming particle to descendents
-       for daughter in self.daughters:
-         daughter.add(particle)
-     # if this is the first particle this cell has encountered
-     else:
-       self.particle = particle
-
-     # change center of mass
-     self.xcen = (self.n * self.xcen + particle.x) / float(self.n + 1)
-     self.ycen = (self.n * self.ycen + particle.y) / float(self.n + 1)
-     self.zcen = (self.n * self.zcen + particle.z) / float(self.n + 1)
-     # increment particle counter
-     self.n += 1
-
-  # create this cell's eight daughters
-  def makedaughters(self):
-    xhalf = (self.xmin + self.xmax) / 2.
-    yhalf = (self.ymin + self.ymax) / 2.
-    zhalf = (self.zmin + self.zmax) / 2.
-    daughter1 = Cell(self.xmin, xhalf, self.ymin, yhalf, self.zmin, zhalf, self.name+".0")
-    daughter2 = Cell(xhalf, self.xmax, self.ymin, yhalf, self.zmin, zhalf, self.name+".1")
-    daughter3 = Cell(self.xmin, xhalf, yhalf, self.ymax, self.zmin, zhalf, self.name+".2")
-    daughter4 = Cell(xhalf, self.xmax, yhalf, self.ymax, self.zmin, zhalf, self.name+".3")
-    daughter5 = Cell(self.xmin, xhalf, self.ymin, yhalf, zhalf, self.zmax, self.name+".4")
-    daughter6 = Cell(xhalf, self.xmax, self.ymin, yhalf, zhalf, self.zmax, self.name+".5")
-    daughter7 = Cell(self.xmin, xhalf, yhalf, self.ymax, zhalf, self.zmax, self.name+".6")
-    daughter8 = Cell(xhalf, self.xmax, yhalf, self.ymax, zhalf, self.zmax, self.name+".7")
-    self.daughters = [daughter1, daughter2, daughter3, daughter4, daughter5, daughter6, daughter7, daughter8]
-
-  # makes cell forget current daughters and take in new daughters,
-  # recalculating mass and center of mass
-  def assigndaughters(self, daughters):
-    self.daughters = []
-    self.daughters = daughters
-    self.n = sum([daughter.n for daughter in daughters])
-    # only need to calculate center of mass if cell is not empty
-    if self.n > 0:
-      self.xcen = sum([daughter.n * daughter.xcen for daughter in daughters]) / float(self.n)
-      self.ycen = sum([daughter.n * daughter.ycen for daughter in daughters]) / float(self.n)
-      self.zcen = sum([daughter.n * daughter.zcen for daughter in daughters]) / float(self.n)
-
-  # traverse the tree to get a list of particles in this cell and below
-  def particles(self):
-    # if this is a bottom level cell with a particle
-    if self.particle:
-      return [self.particle]
-    # else, if this cell has daughters, forward request to its daughters and
-    # accumulate their answers
-    elif self.daughters:
-      l = []
-      for daughter in self.daughters:
-        l.extend(daughter.particles())
-      return l
-    # else, this is a bottom level cell with no particle
-    else:
-      return []
-
-  # test if this cell is far enough from the specified particle for
-  # force calculation
-  def meetscriterion(self, particle, TREE_THRES, SOFTENING):
-     # if this cell has many particles,
-     # cell center of mass must be farther from particle than size of cell
-     if self.daughters:
-       s = self.xmax - self.xmin
-       dx = particle.x - self.xcen
-       dy = particle.y - self.ycen
-       dz = particle.z - self.zcen
-       d  = (dx*dx + dy*dy + dz*dz)**0.5
-       # test d/s > tree_thres (equivalent to s/d < theta = tree_thres^-1)
-       # also, we want to calculate individual particle forces within the
-       # softening length
-       return (d/s) > TREE_THRES and d > SOFTENING
-     # else, just check that particle isn't trying to interact with itself
-     # using object identity
-     else:
-       return self.particle != particle
 ########################################################################################################################################################
 # seed the RNG to give the same Plummer initial conditions
 def seed():
   random.seed("this is a seed for timing purposes")
 
-# Plummer sphere with N solar mass stars, scale radius a parsecs
-def plummersphere(N, a, NEWTON_G):
-  x, y, z = [], [], []
-  vx, vy, vz = [], [], []
-  nstars = 0
-  while nstars < N:
-    # Sample radius from cumulative mass distribution
-    radius = a / np.sqrt(random.random()**(-2/3) - 1)
-    # Sample velocity magnitude through inversion sampling from velocity
-    # distribution
-    xx = random.random()
-    yy = random.random()*0.1
-    if yy < xx**2 * (1-xx**2)**3.5: # the star is added to the sample
-      nstars += 1
-      vmag = xx * np.sqrt(2*NEWTON_G*N)*(radius**2+a**2)**(-0.25)
-        # N = total mass by construction
-      # Calculate location coordinates
-      phi = random.random()*2*np.pi
-      theta = np.arccos(random.random() * 2 - 1)
-      x.append(radius*np.sin(theta)*np.cos(phi))
-      y.append(radius*np.sin(theta)*np.sin(phi))
-      z.append(radius*np.cos(theta))
-      # Calculate velocity coordinates
-      phi = random.random()*2*np.pi
-      theta = np.arccos(random.random() * 2 - 1)
-      vx.append(vmag*np.sin(theta)*np.cos(phi))
-      vy.append(vmag*np.sin(theta)*np.sin(phi))
-      vz.append(vmag*np.cos(theta))
-  return [Particle(x[i], y[i],  vx[i], vy[i],  str(i)) \
-    for i in range(N)]
-"""
-# two body problem with orbit semimajor axis a, eccentricity e
-def kepler(a, e, NEWTON_G):
-  rmin = a * (1-e) #periastron
-  h = (rmin * (1+e) * NEWTON_G * 2)**0.5 #angular momentum
-  v = h/rmin
-  return [Particle(rmin/2., 0, 0, 0, 0, v/2., "A"), \
-    Particle(-rmin/2., 0, 0, 0, 0, -v/2., "B")]
-
-# four body problem with inner semimajor axis a1, eccentricity e1
-#                        outer semimajor axis a2, eccentricity e2
-def doublekepler(a1, e1, a2, e2, NEWTON_G):
-  particles = kepler(a1, e1, NEWTON_G) #inner binary
-  rmin = a2 * (1-e2) #outer periastron
-  h = (rmin * (1+e2) * 9 * NEWTON_G * 2)**0.5 #outer angular momentum
-    # 9 because +1 from other outer binary, and inner binary is twice as close
-    # (x4) and is composed of two stars (x2), giving +8
-  v = h/rmin
-  particles.extend([Particle(rmin/2., 0, 0, 0, 0, v/2., "C"), \
-    Particle(-rmin/2., 0, 0, 0, 0, -v/2., "D")]) #outer binary
-  return particles
-"""
+def plummersphere_2D(N, a, NEWTON_G):
+    x, y = [], []
+    vx, vy = [], []
+    masses = []  # Lista para almacenar las masas de las estrellas
+    nstars = 0
+    while nstars < N:
+        radius = a / np.sqrt(np.random.random()**(-2/3) - 1)
+        xx = np.random.random()
+        yy = np.random.random()*0.1
+        if yy < xx**2 * (1-xx**2)**3.5:
+            nstars += 1
+            vmag = xx * np.sqrt(2*NEWTON_G*N)*(radius**2+a**2)**(-0.25)
+            phi = np.random.random()*2*np.pi
+            x.append(radius*np.cos(phi))
+            y.append(radius*np.sin(phi))
+            phi = np.random.random()*2*np.pi
+            vx.append(vmag*np.cos(phi))
+            vy.append(vmag*np.sin(phi))
+            
+            # Generar una masa aleatoria para la estrella dentro de un rango [min_mass, max_mass]
+            min_mass = 0.8  # Puedes ajustar este valor
+            max_mass = 1.2  # Puedes ajustar este valor
+            star_mass = np.random.uniform(min_mass, max_mass)
+            masses.append(star_mass)
+            
+    return [Particle(x[i], y[i], vx[i], vy[i], masses[i], str(i)) for i in range(N)]
 
 #########################################################################################################################################################################
 
@@ -315,25 +213,22 @@ def gravityAcc(a, b, m_b):
     dSq = dist_squared(a, b)
     if dSq <= 4 * r * r:
         return Vector(0, 0)
-    return mult(sub(a, b), dt * G * m_b / (dSq * math.sqrt(dSq)))
+    return mult(sub(a, b), G * m_b / (dSq * math.sqrt(dSq)))
 
-# Suponiendo que ya tenemos las clases Vector, Particle y TreeNode definidas...
-
-def gravity(particles, root):
-    for p in particles:
-        gravitate(p, root)
+def dist(a, b):
+    return math.sqrt(dist_squared(a, b))
 
 def gravitate(p, tn):
     if tn.leaf:
         if tn.particle is None or p == tn.particle:
             return
-        p.vel.add(gravityAcc(tn.particle.pos, p.pos, mass))
+        p.vel.add(mult(gravityAcc(tn.particle.pos, p.pos, tn.particle.mass), dt))  # Multiplicamos por dt aquí
         return
 
     if tn.center is None:
         tn.center = mult(tn.total_center, 1.0 / tn.count)
     if tn.w / dist(p.pos, tn.center) < theta:
-        p.vel.add(gravityAcc(tn.center, p.pos, tn.total_mass))
+        p.vel.add(mult(gravityAcc(tn.center, p.pos, tn.total_mass), dt))  # Multiplicamos por dt aquí
         return
 
     for child in tn.children:
@@ -345,8 +240,9 @@ N = 1000  # Número de estrellas por galaxia
 a = 5  # Radio de escala en parsecs
 NEWTON_G = 6.67430e-11  # Constante gravitacional
 
-galaxia1 = plummersphere(N, a, NEWTON_G)
-galaxia2 = plummersphere(N, a, NEWTON_G)
+galaxia1 = plummersphere_2D(N, a, NEWTON_G)
+galaxia2 = plummersphere_2D(N, a, NEWTON_G)
+
 
 def build_tree(particles):
     # Definir los límites de tu espacio de simulación. Ajusta según sea necesario.
@@ -360,61 +256,48 @@ def gravity(particles, root):
     for p in particles:
         gravitate(p, root)
 
+def inicializar_galaxias(N, a, NEWTON_G):
+    galaxia1 = plummersphere_2D(N, a, NEWTON_G)
+    galaxia2 = plummersphere_2D(N, a, NEWTON_G)
+    return galaxia1, galaxia2
 
-def update_positions(particles, root):
+# Actualizar posiciones y velocidades de las partículas
+def update_positions(particles, dt, NEWTON_G, SOFTENING):
+    root = build_tree(particles)  # Reconstruir el árbol en cada paso de tiempo
+    gravity(particles, root)  # Actualizar las velocidades
     for particle in particles:
         particle.kick(root, NEWTON_G, dt, SOFTENING)
         particle.drift(dt)
 
-def inicializar_galaxias():
-    N = 1000  # Número de estrellas por galaxia
-    a = 5  # Radio de escala en parsecs
-    NEWTON_G = 6.67430e-11  # Constante gravitacional
-    
-    # Generar las partículas para cada galaxia usando la función plummersphere
-    galaxia1 = plummersphere(N, a, NEWTON_G)
-    galaxia2 = plummersphere(N, a, NEWTON_G)
-    
-    return galaxia1, galaxia2
+# Función para animar
+def animate(N, a, NEWTON_G, dt, SOFTENING):
+    galaxia1, galaxia2 = inicializar_galaxias(N, a, NEWTON_G)
 
-
-
-
-
-# Función para actualizar las posiciones de las partículas en un paso de tiempo
-def update_positions(particles, root):
-    gravity(particles, root)  # Actualizar velocidades y posiciones
-    for particle in particles:
-        particle.actualizar_posicion(dt)
-        particle.actualizar_velocidad(dt)
-
-# Función para inicializar las galaxias y construir el árbol
-def inicializar_galaxias():
-    # ... (tu código para inicializar las galaxias) ...
-    return galaxia1, galaxia2, build_tree(galaxia1 + galaxia2)
-
-# Crear la animación
-def animate():
-    galaxia1, galaxia2, tree = inicializar_galaxias()
-
-    fig = plt.figure("Sistema de Colisión de Galaxias")
-    ax = fig.add_subplot(111)
-    sp, = ax.plot([], [], 'ro')
-
-    ax.set_ylim(-100, 100)  # Ajusta según tus límites
+    fig, ax = plt.subplots()
+    sc = ax.scatter([], [])
     ax.set_xlim(-100, 100)
+    ax.set_ylim(-100, 100)
 
-    def update(i):
-        update_positions(galaxia1 + galaxia2, tree)
+    def init():
+        data = [(p.x, p.y) for p in galaxia1 + galaxia2]
+        sc.set_offsets(data)
+        return sc,
 
-        x = [p.x for p in galaxia1 + galaxia2]
-        y = [p.y for p in galaxia1 + galaxia2]
-        sp.set_data(x, y)
-        ax.set_title('Frame dibujado: %d' % (i))
-        return sp,
+    def update(frame):
+        update_positions(galaxia1 + galaxia2, dt, NEWTON_G, SOFTENING)
+        data = [(p.x, p.y) for p in galaxia1 + galaxia2]
+        sc.set_offsets(data)
+        return sc,
 
-    ani = FuncAnimation(fig, update, frames=range(100), interval=20, repeat=False)
+    ani = FuncAnimation(fig, update, frames=range(100), init_func=init, blit=True)
     plt.show()
 
+# Parámetros
+N = 1000
+a = 5
+NEWTON_G = 6.67430e-11
+dt = 60. * 60. * 24
+SOFTENING = 0.1  # Ajusta según sea necesario
+
 # Llamar a la función para crear la animación
-animate()
+animate(N, a, NEWTON_G, dt, SOFTENING)
