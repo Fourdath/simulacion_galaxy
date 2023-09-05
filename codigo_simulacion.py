@@ -8,6 +8,7 @@ import matplotlib.animation as animation
 from matplotlib.animation import FuncAnimation
 
 
+
 class TreeNode:
     def __init__(self, x, y, w):
         self.x = x
@@ -46,38 +47,7 @@ class TreeNode:
           self.children[quadrant].insert(new_particle)
           self.total_mass += new_particle.mass
 
-""" 
-    def insert(self, new_particle):
-        new_particle.x += random.uniform(-0.1, 0.1)
-        new_particle.y += random.uniform(-0.1, 0.1)
-
-        if self.leaf:
-            if self.particle is None:
-                self.particle = new_particle
-                self.total_mass = new_particle.mass
-                return
-            else:
-                old_particle = self.particle
-                self.leaf = False
-                self.children[0] = TreeNode(self.x, self.y, self.w / 2)
-                self.children[1] = TreeNode(self.x, self.y + self.w / 2, self.w / 2)
-                self.children[2] = TreeNode(self.x + self.w / 2, self.y, self.w / 2)
-                self.children[3] = TreeNode(self.x + self.w / 2, self.y + self.w / 2, self.w / 2)
-                
-                quadrant_old = self.which(old_particle)
-                quadrant_new = self.which(new_particle)
-                
-                self.children[quadrant_old].insert(old_particle)
-                self.children[quadrant_new].insert(new_particle)
-                
-                self.particle = None
-                self.total_mass = old_particle.mass + new_particle.mass
-                return
-        else:
-            quadrant = self.which(new_particle)
-            self.children[quadrant].insert(new_particle)
-            self.total_mass += new_particle.mass
-"""
+  
 class Vector:
     def __init__(self, x, y):
         self.x = x
@@ -126,7 +96,7 @@ class Particle:
         self.mass = mass
         self.name = name
         self.vel = Vector(0, 0)
-        #self.pos = [x, y] 
+        #self.pos = [x, y]
         # Asumiré que quieres inicializar la aceleración a cero, pero puedes cambiar esto si lo necesitas.
         self.ax, self.ay = 0, 0
 
@@ -198,38 +168,16 @@ def plummersphere_2D(N, a, NEWTON_G):
             phi = np.random.random()*2*np.pi
             vx.append(vmag*np.cos(phi))
             vy.append(vmag*np.sin(phi))
-            
+
             # Generar una masa aleatoria para la estrella dentro de un rango [min_mass, max_mass]
             min_mass = 0.8  # Puedes ajustar este valor
-            max_mass = 50  # Puedes ajustar este valor
+            max_mass = 5  # Puedes ajustar este valor
             star_mass = np.random.uniform(min_mass, max_mass)
             masses.append(star_mass)
-            
+
     return [Particle(x[i], y[i], vx[i], vy[i], masses[i], str(i)) for i in range(N)]
 
 
-def visualize_particles(particles):
-    fig, ax = plt.subplots(figsize=(10, 10))
-    ax.set_xlim(-1000, 1000)
-    ax.set_ylim(-1000, 1000)
-    ax.set_title("Distribución inicial de partículas")
-
-    # Extraer las coordenadas x e y de las partículas
-    x = [particle.x for particle in particles]
-    y = [particle.y for particle in particles]
-
-    sc = ax.scatter(x, y, s=5)
-
-    def init():
-        sc.set_offsets([])
-        return (sc,)
-
-    def update(frame):
-        # Aquí, simplemente estamos visualizando la distribución inicial, por lo que no hay actualización
-        return (sc,)
-
-    ani = FuncAnimation(fig, update, frames=range(1), init_func=init, blit=True, repeat=False)
-    plt.show()
 
 
 #########################################################################################################################################################################
@@ -277,7 +225,7 @@ def gravitate(p, tn):
 
 # Inicialización de condiciones iniciales
 dt = 60. * 60. * 24  # Un día en segundos
-N = 1000  # Número de estrellas por galaxia
+N = 5000  # Número de estrellas por galaxia
 a = 5  # Radio de escala en parsecs
 NEWTON_G = 6.67430e-11  # Constante gravitacional
 
@@ -311,24 +259,26 @@ def update_positions(particles, dt, NEWTON_G, SOFTENING):
         particle.drift(dt)
 
 
+
+
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML, display
 
 import matplotlib.pyplot as plt
 
-# ... (tu código anterior para las clases y funciones)
 
 def animate():
     galaxia1, galaxia2 = inicializar_galaxias(N, a, NEWTON_G)
     particles = galaxia1 + galaxia2
+    data = [(p.x, p.y) for p in particles]
+    colors = ['blue'] * len(galaxia1) + ['red'] * len(galaxia2)
 
     fig, ax = plt.subplots()
-    sc = ax.scatter([], [])
+    sc = ax.scatter([d[0] for d in data], [d[1] for d in data], c=colors)
     ax.set_xlim(-300, 300)
     ax.set_ylim(-300, 300)
 
     def init():
-        data = [(p.x, p.y) for p in particles]
         sc.set_offsets(data)
         return sc,
 
